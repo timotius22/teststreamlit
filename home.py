@@ -16,6 +16,7 @@ def show_home():
     else:
         # Textbox for API key
         api_key = st.text_input("Enter your OpenAI API key:")
+        st.write("TThis website explains how to easily access your API Key: https://help.socialintents.com/article/188-how-to-find-your-openai-api-key-for-chatgpt"
 
         if api_key:
             st.session_state.api_key = api_key

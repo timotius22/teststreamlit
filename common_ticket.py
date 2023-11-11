@@ -13,7 +13,7 @@ def show_ticket():
         user_input = st.text_area("Write your ticket here:")
 
         # Dropdown for format selection
-        format_selection = st.selectbox("Select the output format:", ["Normal", "HTML", "Jira Markup Language", "HTTP"])
+        format_selection = st.selectbox("Select the output format:", ["Normal", "HTML", "Jira Markup Language"])
 
         # Button to create ticket
         create_button = st.button("Create Ticket")
@@ -86,7 +86,7 @@ def show_ticket():
                     ]
 
                     completion = openai.ChatCompletion.create(
-                        model="gpt-4",
+                        model="gpt-4-turbo",
                         messages=messages
                     )
 
