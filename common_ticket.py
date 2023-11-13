@@ -1,100 +1,97 @@
 import streamlit as st
 import openai
+import json
 
+# Function to load prompts from the JSON file
+def load_prompts():
+    with open('prompts.json', 'r') as file:
+        return json.load(file)
 
+# Functions to format the output
+def format_normal(ticket):
+    # Convert HTML-like tags to readable text
+    ticket = ticket.replace("<h1>", "").replace("</h1>", "\n")
+    ticket = ticket.replace("<p>", "").replace("</p>", "\n\n")
+    # Add more replacements as needed for other tags
+    return ticket.strip()
+
+def format_html(ticket):
+    # Wrap the ticket in HTML body tags
+    return f"<html><body>\n{ticket}\n</body></html>"
+
+def format_jira(ticket):
+    # Replace HTML tags with Jira Markup equivalents
+    ticket = ticket.replace("<h1>", "h1. ").replace("</h1>", "\n")
+    ticket = ticket.replace("<p>", "").replace("</p>", "\n\n")
+    # Add more replacements as needed for other tags
+    return ticket.strip()
+
+# Main function to show ticket
 def show_ticket():
-    st.title("Timo's Product Management Tool")
+    st.title("Product GPT")
 
-    if 'ticket_content' not in st.session_state:
-        # Dropdown for ticket type selection
-        ticket_type = st.selectbox("Select the ticket type:", ["Bug", "User Story", "Task", "Spike"])
+    # Use the user's API key if it exists, otherwise use the default
+    openai.api_key = st.session_state.get('api_key', st.secrets["openai"]["api_key"])
 
-        # Textbox for user input
-        user_input = st.text_area("Write your ticket here:")
+    # Dropdown for ticket type selection
+    ticket_type = st.selectbox("Select the ticket type:", ["Bug", "User Story", "Task", "Spike"])
 
-        # Dropdown for format selection
-        format_selection = st.selectbox("Select the output format:", ["Normal", "HTML", "Jira Markup Language"])
+    # Textbox for user input
+    user_input = st.text_area("Write your ticket here:")
 
-        # Button to create ticket
-        create_button = st.button("Create Ticket")
+    # Dropdown for format selection
+    format_selection = st.selectbox("Select the output format:", ["Normal", "HTML", "Jira Markup Language"])
 
-        # Display ticket
-        if create_button:
-            openai.api_key = st.session_state.api_key
-            try:
-                if ticket_type == "Bug":
-                    prompt = "Write a bug ticket for the following issue:\n" \
-                             "h1. Possible Explanations for the Bug:\n" \
-                             "_Possible explanations that lead to the bug and ideas on how to solve the problem._\n" \
-                             "h1. Description\n" \
-                             "_A detailed description of the bug. It should give the reader a comprehensive understanding of what the bug is, where it occurs, and its impact._\n" \
-                             "h1. Steps to Reproduce\n" \
-                             "_Step-by-step instructions on how to reproduce the bug. These steps should be easy to understand and follow._\n" \
-                             "h1. Current Result\n" \
-                             "_Describe what actually happened, including the error message (if any)._\n" \
-                             "_Screenshot(s)/Screen recording: If possible, attach a screenshot or screen recording showing the bug._\n" \
-                             "h1. Expected Result\n" \
-                             "_Explain what should have happened if the bug didn’t occur._\n" \
-                             "h1. Date/Time of Occurrence\n" \
-                             "_Date and time when the bug was encountered._\n" \
-                             "h1. Additional Information\n" \
-                             "_Any other information that can be helpful in understanding or fixing the bug._\n" \
-                             "{user_input}"
-                elif ticket_type == "User Story":
-                    prompt = "Write a user story for the following requirement:\n" \
-                             "As a [type of user], I want [an action] so that [benefit/value].\n" \
-                             "{user_input}"
-                elif ticket_type == "Task":
-                    prompt = "Write a task for the following action:\n" \
-                             "[Action description]\n" \
-                             "{user_input}"
-                elif ticket_type == "Spike":
-                    prompt = "Write a spike for the following investigation:\n" \
-                             "[Investigation description]\n" \
-                             "{user_input}"
+    # Button to create ticket
+    if st.button("Create Ticket"):
+        prompts = load_prompts()
+        prompt_text = prompts.get(ticket_type, "")
+        if not prompt_text:
+            st.error(f"Could not find a prompt for ticket type: {ticket_type}")
+            return
 
-                with st.spinner("Creating your ticket... This may take up to two minutes."):
-                    messages = [
-                        {"role": "system", "content": "You are a helpful assistant."},
-                        {"role": "user", "content": prompt.format(user_input=user_input)},
-                    ]
+        prompt = {
+            "role": "user",
+            "content": prompt_text + user_input  # Combining prompt text with user input
+        }
 
-                    completion = openai.ChatCompletion.create(
-                        model="gpt-4",
-                        messages=messages
-                    )
+        system_prompt = {
+            "role": "system",
+            "content": "You are an experienced product manager and an expert in writing tickets."
+        }
 
-                    ticket = completion.choices[0]["message"]
-                    if ticket is None:
-                        raise ValueError("No ticket generated.")
+        try:
+            with st.spinner("Creating your ticket... This may take up to two minutes."):
+                response = openai.ChatCompletion.create(
+                    model="gpt-4-1106-preview",
+                    messages=[system_prompt, prompt]
+                )
 
-                st.session_state.ticket_content = ticket
-            except Exception as e:
-                st.error(f"Error creating ticket: {e}")
-    else:
-        st.text_area("Your ticket:", st.session_state.ticket_content, height=300)
+                ticket = response.choices[0].get("message")
 
-        follow_up = st.text_input("Do you want to add anything else to the ticket?")
-        if follow_up:
-            openai.api_key = st.session_state.api_key
-            try:
-                with st.spinner("Updating your ticket... This may take up to two minutes."):
-                    messages = [
-                        {"role": "system", "content": "You are a helpful assistant."},
-                        {"role": "user", "content": st.session_state.ticket_content},
-                        {"role": "user", "content": follow_up},
-                    ]
+                # Check if ticket is None or not a string
+                if ticket is None:
+                    raise ValueError("No ticket generated. The completion result was empty.")
+                if not isinstance(ticket, str):
+                    ticket = str(ticket)  # Convert to string if not already
 
-                    completion = openai.ChatCompletion.create(
-                        model="gpt-4-turbo",
-                        messages=messages
-                    )
+                st.session_state['ticket_content'] = ticket
 
-                    ticket = completion.choices[0]["message"]
-                    if ticket is None:
-                        raise ValueError("No ticket generated.")
+                # Format the ticket based on the selected format and display
+                if format_selection == "Normal":
+                    formatted_ticket = format_normal(ticket)
+                    st.text(formatted_ticket)  # Display as plain text
+                elif format_selection == "HTML":
+                    formatted_ticket = format_html(ticket)
+                    st.code(formatted_ticket, language="html")  # Display as HTML code
+                elif format_selection == "Jira Markup Language":
+                    formatted_ticket = format_jira(ticket)
+                    st.code(formatted_ticket, language="markup")  # Display as Jira Markup
 
-                st.session_state.ticket_content = ticket
-                st.text_area("Your updated ticket:", ticket, height=300)
-            except Exception as e:
-                st.error(f"Error updating ticket: {e}")
+                st.success("Ticket created successfully:")
+
+        except openai.error.OpenAIError as openai_error:
+            st.error(f"An error occurred with OpenAI: {openai_error}")
+        except Exception as e:
+            st.error(f"An unexpected error occurred: {e}")
+
