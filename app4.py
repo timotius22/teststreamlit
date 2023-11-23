@@ -1,6 +1,7 @@
 import streamlit as st
 import openai
-from common_ticket3_norefinement import show_ticket
+from ticket_ui import create_ticket_ui, display_formatted_ticket, refine_ticket_ui
+from common_ticket4 import load_prompts, chat_with_openai, refine_ticket_logic
 
 # Function to validate API key against OpenAI
 def validate_api_key(api_key):
@@ -28,8 +29,8 @@ def show_login_page():
             if username_input == st.secrets["login_credentials"]["username"] and \
                     password_input == st.secrets["login_credentials"]["password"]:
                 st.session_state['authenticated'] = True
+                # Redirect to ticket creation page by setting the action
                 st.session_state['action'] = 'create_ticket'
-                st.experimental_rerun()
 
     else:
         api_key_input = st.text_input("API Key", type="password")
@@ -37,8 +38,8 @@ def show_login_page():
         if st.button("Login with API Key"):
             if validate_api_key(api_key_input):
                 st.session_state['authenticated'] = True
+                # Redirect to ticket creation page by setting the action
                 st.session_state['action'] = 'create_ticket'
-                st.experimental_rerun()
 
 # Main function
 def main():
@@ -51,7 +52,26 @@ def main():
             st.session_state['action'] = 'create_ticket'
 
         if st.session_state['action'] == 'create_ticket':
-            show_ticket()
+            ticket_type, user_input, format_selection, create_ticket = create_ticket_ui()
+
+            if create_ticket:
+                prompts = load_prompts()
+                prompt_text = prompts.get(ticket_type, "")
+                if not prompt_text:
+                    st.error(f"Could not find a prompt for ticket type: {ticket_type}")
+                    return
+
+                prompt = {"role": "user", "content": prompt_text + user_input}
+                system_prompt = {"role": "system", "content": "You are an experienced product manager and an expert in writing tickets."}
+                st.session_state['conversation_history'] = [system_prompt, prompt]
+
+                gpt_response = chat_with_openai(prompt, st.session_state['conversation_history'])
+                display_formatted_ticket(gpt_response, format_selection)
+
+            refine_input, refine_ticket = refine_ticket_ui()
+            if refine_ticket:
+                updated_ticket = refine_ticket_logic(refine_input, format_selection, st.session_state['conversation_history'])
+                display_formatted_ticket(updated_ticket, format_selection)
 
         # Sidebar only appears after successful login
         with st.sidebar:
@@ -60,12 +80,13 @@ def main():
             if st.button("Log Out"):
                 # Clear the session and show the login page
                 st.session_state.clear()
-                st.experimental_rerun()
+                st.session_state['action'] = 'show_login'
+                show_login_page()
 
         # Execute actions as per the session state
         if st.session_state.get('action') == 'logout':
             st.session_state.clear()
-            st.experimental_rerun()
+            show_login_page()
 
 if __name__ == "__main__":
     main()
